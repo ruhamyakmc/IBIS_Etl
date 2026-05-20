@@ -124,6 +124,7 @@ class DataValidator:
         country_code: Optional[int] = None,
         country_name: str = '',
         site_name: str = '',
+        skip_identity: bool = False,
     ) -> pd.DataFrame:
         """
         Run all 24 validation checks and return a quality-report DataFrame.
@@ -154,11 +155,13 @@ class DataValidator:
             issues += self._check_countrycode_mismatch(df, country_code, country_name)
 
         # Duplicate / related participant identity checks
-        issues += self._check_duplicate_subjid(df)
-        issues += self._check_duplicate_phone(df)
-        issues += self._check_similar_phones(df)
-        issues += self._check_duplicate_name(df)
-        issues += self._check_similar_names(df)
+        # (skipped at per-facility level when a country-level pass handles them)
+        if not skip_identity:
+            issues += self._check_duplicate_subjid(df)
+            issues += self._check_duplicate_phone(df)
+            issues += self._check_similar_phones(df)
+            issues += self._check_duplicate_name(df)
+            issues += self._check_similar_names(df)
 
         # Temporal and logical checks
         issues += self._check_interview_duration(df)

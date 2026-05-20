@@ -62,6 +62,29 @@ class MeasuresIbis(BaseStage):
 
             fac_field, fac_codes = _FACILITY_CONFIG.get(country_str, (None, {}))
 
+            # Run identity checks (duplicate phone/name/subjid) across the full
+            # country dataset so cross-facility duplicates are not missed.
+            try:
+                id_validator = DataValidator()
+                id_report = id_validator.validate(
+                    country_group.copy(),
+                    country_code=country_code,
+                    country_name=country_str,
+                    site_name='',
+                    skip_identity=False,
+                )
+                # Keep only the identity-check rows to avoid duplicating other checks.
+                _IDENTITY_CHECKS = {
+                    'duplicate_subjid', 'duplicate_phone', 'similar_phone',
+                    'duplicate_name', 'similar_name',
+                }
+                id_report = id_report[id_report['check'].isin(_IDENTITY_CHECKS)]
+                if not id_report.empty:
+                    all_reports.append(id_report)
+            except Exception as exc:
+                logger.error(f"[{country_str}] Country-level identity check failed: {exc}")
+                errors.append(f"[{country_str}] Country-level identity check failed: {exc}")
+
             # Build (site_name, sub-group) pairs — one per health facility
             if fac_field and fac_field in country_group.columns:
                 fac_col = pd.to_numeric(country_group[fac_field], errors='coerce')
@@ -88,6 +111,7 @@ class MeasuresIbis(BaseStage):
                         country_code=country_code,
                         country_name=country_str,
                         site_name=site,
+                        skip_identity=True,
                     )
                     all_reports.append(report)
                 except Exception as exc:
