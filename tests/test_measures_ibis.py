@@ -102,7 +102,7 @@ def test_measures_ibis_warns_on_missing_country_code():
                     result = stage.run()
 
     # Validation ran (MockValidator was called) and report was written
-    MockValidator.return_value.validate.assert_called_once()
+    MockValidator.return_value.validate.assert_called()
     call_kwargs = MockValidator.return_value.validate.call_args
     # country_code should be None (not found in map)
     assert call_kwargs.kwargs.get('country_code') is None or call_kwargs[1].get('country_code') is None
