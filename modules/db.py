@@ -46,6 +46,18 @@ def init_schemas(engine: Engine) -> None:
     logger.info('Initialised schemas: %s', SCHEMAS)
 
 
+def run_migrations(engine: Engine) -> None:
+    """Run all SQL migration files in sql/migrations/ in filename order (idempotent)."""
+    migrations_dir = Path(__file__).parent.parent / 'sql' / 'migrations'
+    sql_files = sorted(migrations_dir.glob('*.sql'))
+    with engine.begin() as conn:
+        for path in sql_files:
+            conn.execute(text(path.read_text()))
+            logger.debug('Applied migration: %s', path.name)
+    if sql_files:
+        logger.info('Ran %d migration(s).', len(sql_files))
+
+
 def init_sms_tables(engine: Engine) -> None:
     """Create SMS tables from sql/sms/init_sms_schema.sql (idempotent — IF NOT EXISTS)."""
     sql_path = Path(__file__).parent.parent / 'sql' / 'sms' / 'init_sms_schema.sql'

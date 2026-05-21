@@ -6,7 +6,7 @@ import sys
 from collections import defaultdict, deque
 
 from modules.config import ConfigLoader
-from modules.db import create_db_engine, init_schemas, init_sms_tables
+from modules.db import create_db_engine, init_schemas, init_sms_tables, run_migrations
 from stages.base import StageResult
 
 from stages.ftp_to_extracted import FtpToExtracted
@@ -142,6 +142,7 @@ def main() -> None:
     config = ConfigLoader('config.json')
     engine = create_db_engine(config)
     init_schemas(engine)
+    run_migrations(engine)
     init_sms_tables(engine)
 
     stages = build_run_list(STAGE_DEPS, run_all=args.all, pipeline=args.pipeline)
