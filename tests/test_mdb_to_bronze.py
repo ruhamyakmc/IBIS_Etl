@@ -136,3 +136,29 @@ def test_run_skips_followup_when_table_absent():
     assert 'baseline' in ingested_tables
     assert 'followup' not in ingested_tables
     assert result.success
+
+
+def test_run_continues_when_list_mdb_tables_raises():
+    """run() does not fail when list_mdb_tables raises for a file."""
+    config = _make_config()
+    engine = MagicMock()
+
+    ingested_tables: list[str] = []
+
+    def fake_ingest(db_path, table_name, country, community):
+        ingested_tables.append(table_name)
+        return 1
+
+    with patch('stages.mdb_to_bronze.get_country_paths',
+               return_value={'extract_path': '/fake'}), \
+         patch('stages.mdb_to_bronze.glob_module.glob', return_value=['/fake/t1.mdb']), \
+         patch('stages.mdb_to_bronze.select_latest_per_tablet',
+               return_value=['/fake/t1.mdb']), \
+         patch('stages.mdb_to_bronze.list_mdb_tables',
+               side_effect=RuntimeError('mdb-tables failed')), \
+         patch.object(MdbToBronze, '_ingest_file', side_effect=fake_ingest):
+        stage = MdbToBronze(config=config, engine=engine)
+        result = stage.run()
+
+    assert 'followup' not in ingested_tables
+    assert result.success

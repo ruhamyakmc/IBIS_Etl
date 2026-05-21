@@ -53,6 +53,7 @@ class MdbToBronze(BaseStage):
             logger.info(f"[{country}] {len(db_files)} MDB file(s) to process.")
 
             for db_path in db_files:
+                baseline_ok = True
                 try:
                     n = self._ingest_file(db_path, table_name, country, community_name)
                     total_rows += n
@@ -63,6 +64,10 @@ class MdbToBronze(BaseStage):
                     )
                     logger.error(msg)
                     errors.append(msg)
+                    baseline_ok = False
+
+                if not baseline_ok:
+                    continue
 
                 # Ingest followup if present — not all tablets will have follow-up data yet
                 try:
@@ -85,7 +90,7 @@ class MdbToBronze(BaseStage):
                         logger.error(msg)
                         errors.append(msg)
                 else:
-                    logger.warning(
+                    logger.info(
                         f"[{country}] No followup table in '{os.path.basename(db_path)}' — skipping."
                     )
 
