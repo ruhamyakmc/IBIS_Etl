@@ -1,6 +1,5 @@
 import pandas as pd
-import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from stages.mdb_to_bronze import MdbToBronze
 
