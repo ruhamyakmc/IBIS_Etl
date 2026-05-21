@@ -41,7 +41,7 @@ SELECT
         ELSE
             'overdue'
     END                                                                 AS window_status
-FROM silver_ibis.baseline b
+FROM gold_ibis.baseline b
 LEFT JOIN gold_ibis.followup f ON f.subjid = b.subjid
 WHERE b.consent::integer = 1
   AND b.subjid IS NOT NULL;
