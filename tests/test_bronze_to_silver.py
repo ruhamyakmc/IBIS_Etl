@@ -89,6 +89,7 @@ def test_bronze_to_silver_processes_followup():
         result = stage.run()
 
     assert result.success
+    assert result.rows_written == 2
     assert 'silver_ibis.followup' in written
     # 2 duplicate uniqueid rows → deduped to 1
     assert len(written['silver_ibis.followup']) == 1
@@ -120,3 +121,4 @@ def test_bronze_to_silver_succeeds_when_followup_empty():
         result = stage.run()
 
     assert result.success
+    assert result.rows_written == 1
