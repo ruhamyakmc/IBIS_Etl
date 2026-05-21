@@ -457,6 +457,192 @@ def _build_weekly_sms_report(weekly_rows: list[dict], cumulative_rows: list[dict
     return '\n'.join(parts)
 
 
+def _query_followup_due(engine) -> list[dict]:
+    """
+    Query gold_ibis.ds_followup_due for Uganda, aggregated by facility.
+    Returns a list of dicts with keys: health_facility_ug, entered_window,
+    primary_endpoint_done, done_not_due, due_pending, overdue.
+    Returns [] if the table does not exist yet.
+    """
+    sql = """
+        SELECT
+            health_facility_ug,
+            COUNT(*) FILTER (
+                WHERE window_status IN ('due', 'attended', 'overdue')
+            )                                                       AS entered_window,
+            COUNT(*) FILTER (WHERE window_status = 'attended')      AS primary_endpoint_done,
+            COUNT(*) FILTER (
+                WHERE has_followup AND followup_out_of_window
+            )                                                       AS done_not_due,
+            COUNT(*) FILTER (
+                WHERE window_status IN ('due')
+            )                                                       AS due_pending,
+            COUNT(*) FILTER (WHERE window_status = 'overdue')       AS overdue
+        FROM gold_ibis.ds_followup_due
+        WHERE countrycode::integer = 1
+        GROUP BY health_facility_ug
+        ORDER BY health_facility_ug
+    """
+    try:
+        df = pd.read_sql(sql, engine)
+        return df.to_dict('records')
+    except Exception as exc:
+        logger.warning("Could not query ds_followup_due: %s", exc)
+        return []
+
+
+def _build_followup_df(rows: list[dict]) -> pd.DataFrame:
+    """
+    Build follow-up tracking DataFrame: parameters as rows, sites as columns.
+    Mirrors the layout of _build_weekly_sms_df.
+    """
+    all_sites = [
+        code for code in _UG_SITE_NAMES
+        if any(str(r.get('health_facility_ug', '')) == code for r in rows)
+    ]
+    site_names = [_UG_SITE_NAMES.get(c, c) for c in all_sites]
+    lookup = {str(r['health_facility_ug']): r for r in rows}
+    cols = [''] + site_names + ['Total', '%']
+
+    def blank() -> dict:
+        return {c: '' for c in cols}
+
+    def fmt_pct(n: int, denom: int) -> str:
+        if denom == 0:
+            return '—'
+        return f'{n} ({n / denom * 100:.1f}%)'
+
+    def pct_str(n: int, denom: int) -> str:
+        if denom == 0:
+            return '—'
+        return f'{n / denom * 100:.1f}%'
+
+    def site_vals(key: str) -> list[int]:
+        return [int(lookup.get(c, {}).get(key, 0)) for c in all_sites]
+
+    entered   = site_vals('entered_window')
+    done      = site_vals('primary_endpoint_done')
+    not_due   = site_vals('done_not_due')
+    pending   = site_vals('due_pending')
+    overdue   = site_vals('overdue')
+
+    tot_entered = sum(entered)
+    tot_done    = sum(done)
+    tot_not_due = sum(not_due)
+    tot_pending = sum(pending)
+    tot_overdue = sum(overdue)
+
+    records = []
+
+    # Entered row
+    r = blank() | {'': 'Entered follow-up period (≥3mo from BL) (n)', 'Total': tot_entered}
+    for name, val in zip(site_names, entered):
+        r[name] = val
+    records.append(r)
+
+    # Completed visit = done + not_due
+    completed     = [d + nd for d, nd in zip(done, not_due)]
+    tot_completed = tot_done + tot_not_due
+    r = blank() | {'': 'Completed follow-up visit (n)', 'Total': tot_completed}
+    for name, val in zip(site_names, completed):
+        r[name] = val
+    records.append(r)
+
+    # Primary endpoint done
+    r = blank() | {
+        '': '  \u2022 Primary Endpoint Done (n,%)',
+        'Total': tot_done,
+        '%': pct_str(tot_done, tot_entered),
+    }
+    for name, val, ent in zip(site_names, done, entered):
+        r[name] = fmt_pct(val, ent)
+    records.append(r)
+
+    # Done not due
+    r = blank() | {'': '  \u2022 Visit Done - Not Due (n)', 'Total': tot_not_due}
+    for name, val in zip(site_names, not_due):
+        r[name] = val
+    records.append(r)
+
+    # Due pending
+    r = blank() | {
+        '': 'Due Pending (n,%)',
+        'Total': tot_pending,
+        '%': pct_str(tot_pending, tot_entered),
+    }
+    for name, val, ent in zip(site_names, pending, entered):
+        r[name] = fmt_pct(val, ent)
+    records.append(r)
+
+    # Overdue
+    r = blank() | {
+        '': 'Overdue (n,%)',
+        'Total': tot_overdue,
+        '%': pct_str(tot_overdue, tot_entered),
+    }
+    for name, val, ent in zip(site_names, overdue, entered):
+        r[name] = fmt_pct(val, ent)
+    records.append(r)
+
+    return pd.DataFrame(records, columns=cols)
+
+
+def _build_followup_table(rows: list[dict]) -> str:
+    """Plain-text follow-up tracking table for email body."""
+    if not rows:
+        return 'Follow-up Tracking\n  No data yet (ds_followup_due not populated).\n'
+
+    all_sites = [
+        code for code in _UG_SITE_NAMES
+        if any(str(r.get('health_facility_ug', '')) == code for r in rows)
+    ]
+    lookup = {str(r['health_facility_ug']): r for r in rows}
+
+    col_w   = 17
+    label_w = 38
+    sep = '─' * (label_w + col_w * len(all_sites) + col_w)
+
+    header = f"{'':>{label_w}}"
+    for code in all_sites:
+        header += f'{_UG_SITE_NAMES.get(code, code):>{col_w}}'
+    header += f'{"Total":>{col_w}}'
+
+    def site_vals(key: str) -> list[int]:
+        return [int(lookup.get(c, {}).get(key, 0)) for c in all_sites]
+
+    def fmt_pct(n: int, denom: int) -> str:
+        return f'{n} ({n/denom*100:.1f}%)' if denom else '—'
+
+    entered   = site_vals('entered_window')
+    done      = site_vals('primary_endpoint_done')
+    not_due   = site_vals('done_not_due')
+    pending   = site_vals('due_pending')
+    overdue_v = site_vals('overdue')
+
+    tot_e, tot_d, tot_nd, tot_p, tot_o = (
+        sum(entered), sum(done), sum(not_due), sum(pending), sum(overdue_v)
+    )
+    completed   = [d + nd for d, nd in zip(done, not_due)]
+    tot_c = tot_d + tot_nd
+
+    def row(label: str, vals: list, total, pct_denom: list | None = None) -> str:
+        cells = ''
+        for v, e in zip(vals, pct_denom or [None]*len(vals)):
+            cells += f'{(fmt_pct(v, e) if e is not None else v):>{col_w}}'
+        cells += f'{(fmt_pct(total, sum(pct_denom)) if pct_denom else total):>{col_w}}'
+        return f'{label:<{label_w}}{cells}'
+
+    lines = ['Follow-up Tracking — Uganda', sep, header, sep]
+    lines.append(row('Entered follow-up period (≥3mo) (n)', entered, tot_e))
+    lines.append(row('Completed follow-up visit (n)', completed, tot_c))
+    lines.append(row('  • Primary Endpoint Done (n,%)', done, tot_d, entered))
+    lines.append(row('  • Visit Done - Not Due (n)', not_due, tot_nd))
+    lines.append(row('Due Pending (n,%)', pending, tot_p, entered))
+    lines.append(row('Overdue (n,%)', overdue_v, tot_o, entered))
+    lines.append(sep)
+    return '\n'.join(lines)
+
+
 def send_sms_weekly_report(engine, config) -> None:
     """Send weekly SMS activity report to Uganda field recipients."""
     from datetime import date, timedelta
@@ -482,17 +668,20 @@ def send_sms_weekly_report(engine, config) -> None:
     weekly_rows = processor.get_weekly_report_data(week_start=week_start, week_end=week_end)
     cumulative_rows = processor.get_cumulative_report_data()
 
-    if not weekly_rows and not cumulative_rows:
-        logger.info("No SMS activity — weekly report not sent.")
+    followup_rows = _query_followup_due(engine)
+
+    if not weekly_rows and not cumulative_rows and not followup_rows:
+        logger.info("No SMS activity or follow-up data — weekly report not sent.")
         return
 
     week_ending_str = this_tuesday.strftime('%d %b %Y')
     subject = f'IBIS SMS Weekly Report \u2014 week ending {week_ending_str}'
     plain = _build_weekly_sms_report(weekly_rows, cumulative_rows, week_ending_str)
+    plain = f'{plain}\n\n{_build_followup_table(followup_rows)}'
     html = f'<pre style="font-family:monospace;font-size:13px">{_html.escape(plain)}</pre>'
 
     # Build CSV attachment in the formatted report layout,
-    # with a blank spacer row separating the two sections.
+    # with a blank spacer row separating the sections.
     frames = []
     if weekly_rows:
         frames.append(_build_weekly_sms_df(weekly_rows, f'This week (ending {week_ending_str})'))
@@ -500,6 +689,10 @@ def send_sms_weekly_report(engine, config) -> None:
         frames.append(pd.DataFrame([{}]))
     if cumulative_rows:
         frames.append(_build_weekly_sms_df(cumulative_rows, 'Cumulative (all time)'))
+    if followup_rows:
+        if frames:
+            frames.append(pd.DataFrame([{}]))
+        frames.append(_build_followup_df(followup_rows))
     attachment_df = pd.concat(frames, ignore_index=True) if frames else None
 
     csv_filename = f'ibis_sms_report_{this_tuesday.strftime("%Y-%m-%d")}.csv'

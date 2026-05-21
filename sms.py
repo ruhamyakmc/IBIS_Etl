@@ -55,7 +55,6 @@ def main() -> None:
         return
 
     if args.check_delivery:
-        from modules.sms_processor import SmsProcessor
         from modules.notifier import send_sms_flagged_alert
         processor = SmsProcessor(config=config, engine=engine)
         dlr = processor.fetch_delivery_statuses()
