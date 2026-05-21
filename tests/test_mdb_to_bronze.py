@@ -82,3 +82,57 @@ def test_ingest_file_writes_table_name_to_meta():
 
     assert 'table_name' in captured['meta_df'].columns
     assert captured['meta_df']['table_name'].iloc[0] == 'followup'
+
+
+def test_run_ingests_followup_when_table_present():
+    """run() ingests followup from MDB files that have a followup table."""
+    config = _make_config()
+    engine = MagicMock()
+
+    ingested_tables: list[str] = []
+
+    def fake_ingest(db_path, table_name, country, community):
+        ingested_tables.append(table_name)
+        return 1
+
+    with patch('stages.mdb_to_bronze.get_country_paths',
+               return_value={'extract_path': '/fake'}), \
+         patch('stages.mdb_to_bronze.glob_module.glob', return_value=['/fake/t1.mdb']), \
+         patch('stages.mdb_to_bronze.select_latest_per_tablet',
+               return_value=['/fake/t1.mdb']), \
+         patch('stages.mdb_to_bronze.list_mdb_tables',
+               return_value=['baseline', 'followup']), \
+         patch.object(MdbToBronze, '_ingest_file', side_effect=fake_ingest):
+        stage = MdbToBronze(config=config, engine=engine)
+        result = stage.run()
+
+    assert 'baseline' in ingested_tables
+    assert 'followup' in ingested_tables
+    assert result.success
+
+
+def test_run_skips_followup_when_table_absent():
+    """run() does not fail when followup table is missing from an MDB file."""
+    config = _make_config()
+    engine = MagicMock()
+
+    ingested_tables: list[str] = []
+
+    def fake_ingest(db_path, table_name, country, community):
+        ingested_tables.append(table_name)
+        return 1
+
+    with patch('stages.mdb_to_bronze.get_country_paths',
+               return_value={'extract_path': '/fake'}), \
+         patch('stages.mdb_to_bronze.glob_module.glob', return_value=['/fake/t1.mdb']), \
+         patch('stages.mdb_to_bronze.select_latest_per_tablet',
+               return_value=['/fake/t1.mdb']), \
+         patch('stages.mdb_to_bronze.list_mdb_tables',
+               return_value=['baseline']), \
+         patch.object(MdbToBronze, '_ingest_file', side_effect=fake_ingest):
+        stage = MdbToBronze(config=config, engine=engine)
+        result = stage.run()
+
+    assert 'baseline' in ingested_tables
+    assert 'followup' not in ingested_tables
+    assert result.success

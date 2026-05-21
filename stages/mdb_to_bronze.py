@@ -10,7 +10,7 @@ import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 
-from modules.access_reader import read_mdb_table, select_latest_per_tablet
+from modules.access_reader import read_mdb_table, list_mdb_tables, select_latest_per_tablet
 from modules.config import get_country_paths
 from stages.base import BaseStage, StageResult
 
@@ -58,11 +58,36 @@ class MdbToBronze(BaseStage):
                     total_rows += n
                 except Exception as exc:
                     msg = (
-                        f"[{country}] Failed to ingest "
+                        f"[{country}] Failed to ingest baseline from "
                         f"'{os.path.basename(db_path)}': {exc}"
                     )
                     logger.error(msg)
                     errors.append(msg)
+
+                # Ingest followup if present — not all tablets will have follow-up data yet
+                try:
+                    available = list_mdb_tables(db_path)
+                except Exception as exc:
+                    logger.warning(
+                        f"[{country}] Could not list tables in '{os.path.basename(db_path)}': {exc}"
+                    )
+                    available = []
+
+                if 'followup' in available:
+                    try:
+                        n_fu = self._ingest_file(db_path, 'followup', country, community_name)
+                        total_rows += n_fu
+                    except Exception as exc:
+                        msg = (
+                            f"[{country}] Failed to ingest followup from "
+                            f"'{os.path.basename(db_path)}': {exc}"
+                        )
+                        logger.error(msg)
+                        errors.append(msg)
+                else:
+                    logger.warning(
+                        f"[{country}] No followup table in '{os.path.basename(db_path)}' — skipping."
+                    )
 
         return StageResult(
             success=len(errors) == 0,
