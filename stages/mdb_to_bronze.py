@@ -77,25 +77,24 @@ class MdbToBronze(BaseStage):
         country: str,
         community: str,
     ) -> int:
-        """Load one MDB file into bronze_ibis.baseline. Returns rows written (0 if skipped)."""
+        """Load one MDB table from an MDB file into bronze_ibis.<table_name>. Returns rows written."""
         last_modified = datetime.fromtimestamp(os.path.getmtime(db_path), tz=timezone.utc)
 
-        # Skip if already loaded. On first run the meta table does not yet exist —
-        # treat that as "not loaded" so the initial ingest proceeds normally.
         try:
             with self.engine.connect() as conn:
                 row = conn.execute(
                     text(
                         "SELECT loaded FROM bronze_ibis.meta "
-                        "WHERE file_path = :fp AND last_modified = :lm"
+                        "WHERE file_path = :fp AND last_modified = :lm AND table_name = :tn"
                     ),
-                    {'fp': db_path, 'lm': last_modified},
+                    {'fp': db_path, 'lm': last_modified, 'tn': table_name},
                 ).fetchone()
                 if row and row.loaded:
-                    logger.info(f"Skipping already-loaded: {os.path.basename(db_path)}")
+                    logger.info(
+                        f"Skipping already-loaded: {os.path.basename(db_path)} ({table_name})"
+                    )
                     return 0
         except ProgrammingError:
-            # meta table doesn't exist yet (fresh deployment) — treat as not loaded
             pass
 
         run_id = str(uuid.uuid4())
@@ -109,28 +108,27 @@ class MdbToBronze(BaseStage):
         df['community'] = community
         df['extracted_at'] = extracted_at
 
-        # If the bronze table already exists, align the DataFrame to its schema:
-        # drop columns not in the table and fill any missing columns with NaN.
-        # This handles schema drift between different form versions.
         try:
             with self.engine.connect() as conn:
                 existing_cols = [
                     row[0] for row in conn.execute(
                         text(
                             "SELECT column_name FROM information_schema.columns "
-                            "WHERE table_schema = 'bronze_ibis' AND table_name = 'baseline'"
-                        )
+                            "WHERE table_schema = 'bronze_ibis' AND table_name = :tn"
+                        ),
+                        {'tn': table_name},
                     ).fetchall()
                 ]
             if existing_cols:
                 df = df.reindex(columns=existing_cols)
         except ProgrammingError:
-            pass  # table does not exist yet — let to_sql create it
+            pass
 
         meta = pd.DataFrame([{
             'run_uuid': run_id,
             'file_name': os.path.basename(db_path),
             'file_path': db_path,
+            'table_name': table_name,
             'country': country,
             'community': community,
             'extracted_at': extracted_at,
@@ -138,11 +136,11 @@ class MdbToBronze(BaseStage):
             'loaded': True,
         }])
         with self.engine.begin() as conn:
-            df.to_sql('baseline', conn, schema='bronze_ibis', if_exists='append', index=False)
+            df.to_sql(table_name, conn, schema='bronze_ibis', if_exists='append', index=False)
             meta.to_sql('meta', conn, schema='bronze_ibis', if_exists='append', index=False)
 
         logger.info(
             f"Ingested {len(df)} rows from '{os.path.basename(db_path)}'"
-            f" → bronze_ibis.baseline (run_uuid={run_id})"
+            f" → bronze_ibis.{table_name} (run_uuid={run_id})"
         )
         return len(df)
