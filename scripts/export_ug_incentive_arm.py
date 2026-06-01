@@ -97,6 +97,7 @@ def send_report(excel_bytes: bytes, filename: str, config) -> None:
         return
 
     today = date.today().strftime('%Y-%m-%d')
+    today_long = date.today().strftime('%B %-d, %Y')
     password = _load_smtp_password(email_cfg['keyfiles']['smtp_ini'], email_cfg['keyfiles']['smtp_key'])
 
     msg = MIMEMultipart('mixed')
@@ -105,8 +106,10 @@ def send_report(excel_bytes: bytes, filename: str, config) -> None:
     msg['To'] = ', '.join(recipients)
 
     body = (
-        f'Please find attached the current list of Uganda Incentive arm participants as of {today}.\n\n'
-        f'The file is password-protected. Contact the data team for the password.\n'
+        f'Please find attached the current list of Uganda Incentive Arm participants as of {today_long}.\n\n'
+        f'Please note that the file is password-protected to ensure participant confidentiality. '
+        f'If you require access, kindly contact the Data Team to obtain the password.\n\n'
+        f'Best regards,\n'
     )
     msg.attach(MIMEText(body, 'plain'))
 
