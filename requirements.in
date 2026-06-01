@@ -8,3 +8,4 @@ sqlalchemy==2.0.49
 psycopg2-binary==2.9.11
 openpyxl==3.1.5
 requests==2.32.3
+msoffcrypto-tool==6.0.0

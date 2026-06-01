@@ -6,6 +6,10 @@
 #
 bcrypt==5.0.0
     # via paramiko
+msoffcrypto-tool==6.0.0
+    # via requirements.in
+olefile==0.47
+    # via msoffcrypto-tool
 brotli==1.2.0
     # via py7zr
 certifi==2026.2.25
