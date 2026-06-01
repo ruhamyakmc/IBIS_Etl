@@ -110,6 +110,7 @@ def send_report(excel_bytes: bytes, filename: str, config) -> None:
         f'Please note that the file is password-protected to ensure participant confidentiality. '
         f'If you require access, kindly contact the Data Team to obtain the password.\n\n'
         f'Best regards,\n'
+        f'Emmanuel\n'
     )
     msg.attach(MIMEText(body, 'plain'))
 
