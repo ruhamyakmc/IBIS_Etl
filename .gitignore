@@ -25,6 +25,9 @@ Extracted/
 Output/
 data/sms_messages/
 
+# Sensitive export scripts
+scripts/export_ug_incentive_arm.py
+
 # Logs
 *.log
 logs/
