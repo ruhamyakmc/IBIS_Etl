@@ -138,6 +138,34 @@ def test_run_skips_followup_when_table_absent():
     assert result.success
 
 
+def test_run_quarantines_corrupt_mdb_and_continues():
+    """run() moves a corrupt MDB's tablet folder to Quarantine/ and succeeds."""
+    config = _make_config()
+    engine = MagicMock()
+
+    def fake_ingest(db_path, table_name, country, community):
+        raise RuntimeError("mdb-export failed for 'IBIS_pilot.mdb': offset 4096 is beyond EOF")
+
+    with patch('stages.mdb_to_bronze.get_country_paths',
+               return_value={'extract_path': '/fake/Extracted/Uganda'}), \
+         patch('stages.mdb_to_bronze.glob_module.glob',
+               return_value=['/fake/Extracted/Uganda/Tablet53_2026_05_28/IBIS_pilot.mdb']), \
+         patch('stages.mdb_to_bronze.select_latest_per_tablet',
+               return_value=['/fake/Extracted/Uganda/Tablet53_2026_05_28/IBIS_pilot.mdb']), \
+         patch('stages.mdb_to_bronze.list_mdb_tables', return_value=[]), \
+         patch.object(MdbToBronze, '_ingest_file', side_effect=fake_ingest), \
+         patch('stages.mdb_to_bronze.os.makedirs'), \
+         patch('stages.mdb_to_bronze.shutil') as mock_shutil:
+        stage = MdbToBronze(config=config, engine=engine)
+        result = stage.run()
+
+    assert result.success
+    mock_shutil.move.assert_called_once_with(
+        '/fake/Extracted/Uganda/Tablet53_2026_05_28',
+        '/fake/Extracted/Uganda/Quarantine/Tablet53_2026_05_28',
+    )
+
+
 def test_run_continues_when_list_mdb_tables_raises():
     """run() does not fail when list_mdb_tables raises for a file."""
     config = _make_config()

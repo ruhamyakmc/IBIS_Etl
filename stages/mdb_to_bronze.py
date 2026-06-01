@@ -3,6 +3,7 @@ from __future__ import annotations
 import glob as glob_module
 import logging
 import os
+import shutil
 import uuid
 from datetime import datetime, timezone
 
@@ -58,12 +59,18 @@ class MdbToBronze(BaseStage):
                     n = self._ingest_file(db_path, table_name, country, community_name)
                     total_rows += n
                 except Exception as exc:
-                    msg = (
-                        f"[{country}] Failed to ingest baseline from "
-                        f"'{os.path.basename(db_path)}': {exc}"
+                    tablet_folder = os.path.dirname(db_path)
+                    quarantine_dir = os.path.join(extract_path, 'Quarantine')
+                    dest = os.path.join(quarantine_dir, os.path.basename(tablet_folder))
+                    try:
+                        os.makedirs(quarantine_dir, exist_ok=True)
+                        shutil.move(tablet_folder, dest)
+                    except Exception as move_exc:
+                        logger.warning(f"[{country}] Could not quarantine '{tablet_folder}': {move_exc}")
+                    logger.warning(
+                        f"[{country}] Quarantined corrupt MDB "
+                        f"'{os.path.basename(db_path)}' → {dest}: {exc}"
                     )
-                    logger.error(msg)
-                    errors.append(msg)
                     baseline_ok = False
 
                 if not baseline_ok:
