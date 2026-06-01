@@ -44,6 +44,7 @@ services:
       - ./Downloads:/app/Downloads
       - ./Extracted:/app/Extracted
       - ./logs:/var/log/ibis
+      - ./backups:/app/backups
     command: ["cron", "-f"]
     restart: on-failure:3
     healthcheck:
