@@ -23,6 +23,7 @@ secrets/
 Downloads/
 Extracted/
 Output/
+backups/
 data/sms_messages/
 
 # Sensitive export scripts
